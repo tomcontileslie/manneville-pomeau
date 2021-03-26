@@ -9,7 +9,7 @@ import tikzplotlib as tpl
 ## The goal of this script is to find an invariant density for the MP map.   ##
 ## However, it doesn't work for now because I've used a formula (apply       ##
 ## the transfer operator N times to the constant density 1 and take the      ##
-## density) which is not guaranteed to work for non-expanding maps. This     ##
+## average) which is not guaranteed to work for non-expanding maps. This     ##
 ## method doesn't seem to converge here, but the general shape of the result ##
 ## is still about right so it does illustrate the build-up of mass near the  ##
 ## indifferent fixed point. However, the next step will be to do this        ##
