@@ -4,13 +4,18 @@ import tikzplotlib as tpl
 
 ###############################################################################
 ##  MANNEVILLE-POMEAU by Tom Conti-Leslie                       MIT License  ##
-##  induced.py                                                               ##
+##  invariant_density.py                                                     ##
 ##                                                                           ##
-## Run this Python3 script to generate a plot of the induced map of T_a on   ##
-## the interval [0.5, 1]. This uses non-trivial information about the map,   ##
-## so unfortunately requires more work in order to be converted into a       ##
-## general application (it was initially general but the level of precision  ##
-## needed near the origin to produce a reasonable image is high).            ##
+## This Python3 script generates an approximation of the invariant density   ##
+## of the Manneville-Pomeau map. It does this by first inducing the map      ##
+## on the second half of the interval and iterating the Perron-Frobenius     ##
+## operator there in order to find an invariant density for the induced      ##
+## map. It then lifts this measure to the original interval [0,1] using a    ##
+## standard formula, optimised for this map.                                 ##
+##                                                                           ##
+## Note that iterating the PF operator is time-consuming and reducing the    ##
+## constants D, T, M will speed this up. This will have little effect on     ##
+## the result, especially for small alpha.                                   ##
 ##                                                                           ##
 ## N.B. running this file saves a tex file in the same directory.            ##
 ###############################################################################
@@ -21,18 +26,17 @@ F = 10        # figure size
 
 # Constants relating to the creation of the Markov partition and storing
 # induced mp values
-N = 100       # number of Markov branches to be computed
-S = 100       # number of points to compute per branch
+N = 200       # number of Markov branches to be computed
+S = 10        # number of points to compute per branch
 
-# Constants relating to the iteration of the density
-D = 200       # number of points in the density function
-T = 5        # number of times to iterate the PF operator (TODO 20)
-M = 100       # number of Markov branches to be used in the PF operator
+# Constants relating to the iteration of the density on the induced system
+D = 100       # number of points in the density function
+T = 20        # number of times to iterate the PF operator
+M = 150       # number of Markov branches to be used in the PF operator
 
 # Constants relating to pushing the density
-J = 20        # number of Markov sets to push on
-L = M         # number of Markov branches of [0,1] to use for the final density
-P = 10        # number of points per branch on the support for final density
+L = 400       # number of points in the density function for [0,1]
+P = 100       # number of pre-images to evaluate at each point
 ###############################################################################
 
 def mp(x, a = alpha):
@@ -249,68 +253,37 @@ for i in range(T):
 print("Done")
 print("")
 
-# Create a support of x-coords for the full system. Go from last Markov
-# interval so the support is in increasing order
-print("Switching to full interval...")
-support = np.array([])
-for i in range(L - 1, 0, -1):
-    support = np.append(support, np.linspace(K[i + 1], K[i], P, endpoint = False))
-# special case for rightmost interval which should have the same coords as
-# where we were evaluating the prev density
-support_size_on_left = len(support)
-for i in range(L):
-    support = np.append(support, branches_xs[L - i - 1])
-# Now convert density into something supported on this x axis
-rho = []
+def rho(x):
+    return np.interp(x, xvals, current)
+
+# We now have an invariant density rho on [1/2, 1].
+# Push down using the standard formula tailored to this map.
+# Start by creating an x-coordinate support.
+print("Pushing density onto [0,1]...")
+support = np.linspace(0.0, 1.0, L)
+# store density points in psi
+psi = []
 for x in support:
-    if x <= 0.5:
-        rho.append(0.0)
-    else:
-        rho.append(np.interp(x, xvals, current))
-print("Done")
-print("")
-
-# So now we have x coordinates for [0,1] and a density function rho on [1/2, 1]
-# Use the pushing formula; this involves characteristic functions so let's
-# organise that first
-def char(x, j):
-    """
-    CHARACTERISTIC FUNCTION FOR JTH *INDUCED* MARKOV INTERVAL
-    """
-    if X[j + 1] <= x < X[j]:
-        return 1
-    else:
-        return 0
+    # to calculate psi(x) we need to evaluate rho at pre-images, and we need
+    # the derivative of T^k there too. Save the pre-images of x to avoid
+    # re-computing
     
-# Now push onto original system
-print("Pushing onto [0,1]...")
-# empty density
-psi = np.full(len(support), 0.0)
-# function acting as density
-j_density = []
-def density_func(x):
-    return np.interp(x, support, j_density)
-# go through double sum formula
-for j in range(J):
-    # create rho * X_A_j
-    j_density = []
-    for x in support:
-        # FIXME maybe inefficient
-        j_density.append(np.interp(x, support, rho) * char(x, j))
-    j_density = np.array(j_density)
-    # first step, no application of PF
-    psi += j_density
-    # every subsequent step, apply PF operator
-    for k in range(j):
-        j_density = PF_op(support, density_func, dmp, mpinv, 2)
-        psi += j_density
-    print(j + 1, "/", J)
+    # initialise running product for derivatives, and running preimage for rho
+    running_prod = 2 # two because the points are on right branch, so there is
+                     # a default derivative of 2
+    running_preim = x
+    y = 0 # running sum
+    for i in range(P):
+        y += rho(mpinv2(running_preim)) / running_prod
+        running_preim = mpinv1(running_preim)
+        running_prod *= dmp(running_preim)
+    psi.append(y)
 print("Done")
 print("")
 
-# normalise psi
+print("Integral is", np.trapz(psi, x = support), "; normalising...")
 psi = psi / np.trapz(psi, x = support)
-        
+
 fig = plt.figure(figsize = [F,F])
 ax = fig.add_subplot(1, 1, 1)
 ax.tick_params(axis='both', which='major', labelsize=10)
@@ -320,20 +293,9 @@ ax.set_ylim(0.0,10.0)
 
 ax.plot(support, psi, 'k-')
 
+diff = abs(PF_op(support, lambda x : np.interp(x, support, psi), dmp, mpinv, 2) - psi)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+print("C^infty difference is", max(diff))
+print("C^1     difference is", np.trapz(diff, x = support))
+    
+tpl.save("invariant_density_mp.tex")
